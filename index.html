@@ -1237,23 +1237,35 @@ const C = {
   GROUND_ACCEL: 90,
   AIR_ACCEL: 28,
   FRICTION: 8,
-  JUMP_V: 8.4,
-  DOUBLE_JUMP_V: 8.0,
+  JUMP_V: 9.7,          // ジャンプを少し高く(約2.0m)
+  DOUBLE_JUMP_V: 9.2,
 
   WALLRUN_GRAVITY: 7,
   WALLRUN_MAX_FALL: 4.5,
   WALLRUN_SPEED: 12.5,
   WALLRUN_ACCEL: 70,
-  WALLRUN_MAX_TIME: 2.4,
+  WALLRUN_RUN_TIME: 2.0,    // 同じ壁で連続ウォールランできる時間
+  WALLRUN_SLIDE_TIME: 2.0,  // 滑落してから再ウォールラン可能になるまでの時間
+  WALLSLIDE_FALL: 7.0,      // 滑落中の最大落下速度
   WALLRUN_MIN_SPEED: 3.5,
   WALLRUN_BOOST: 2.4,
   WALLRUN_STICK: 2.2,
   WALLRUN_PROBE: 0.55,
   WALLJUMP_AWAY: 8.5,
-  WALLJUMP_UP: 8.6,
+  WALLJUMP_UP: 8.8,
   WALL_COOLDOWN: 0.28,
 
-  GRAPPLE_RANGE: 65,
+  MANTLE_MIN: 0.4,          // これ以上の段差でよじ登り発動
+  MANTLE_MAX: 2.4,          // よじ登れる最大の高さ(足元基準)
+  MANTLE_REACH: 1.25,       // 前方の縁を掴める水平距離
+  MANTLE_FWD: 0.55,         // 縁の内側へ乗り込む量
+  MANTLE_TIME: 0.32,        // よじ登りモーション時間
+
+  SLIDE_EYE: 0.85,          // スライド中の視点高さ(しゃがみ)
+  SLIDE_MIN_SPEED: 3.0,
+  SLIDE_BOOST: 3.5,         // スライド開始時の初速ブースト
+
+  GRAPPLE_RANGE: 45,        // 到達距離を短めに
   GRAPPLE_PULL: 58,
   GRAPPLE_MAX_SPEED: 32,
   GRAPPLE_GRAV: 0.22,
@@ -1290,10 +1302,13 @@ const vel = new THREE.Vector3();
 let yaw = Math.PI, pitch = 0;             // 初期は +Z(コース)を向く
 let onGround = false, doubleJumpAvailable = true;
 let jumpQueued = false;
-const wallRun = { active: false, side: 0, normal: new THREE.Vector3(), timer: 0 };
+const wallRun = { active: false, sliding: false, side: 0, normal: new THREE.Vector3() };
+const wallState = { id: null, phase: "run", timer: 0 };   // 壁ごとの run/slide サイクル
 const grapple = { active: false, point: new THREE.Vector3() };
+const mantle = { active: false, t: 0, from: new THREE.Vector3(), to: new THREE.Vector3() };
 let wallCooldown = 0;
-let camRoll = 0, fovKick = 0;
+let camRoll = 0, camPitchOffset = 0, fovKick = 0;
+let sliding = false, prevSliding = false, eyeHeight = C.EYE_HEIGHT;
 
 let started = false, paused = false, finished = false;
 let mode = "free";                         // 'free' | 'race'
@@ -1480,6 +1495,9 @@ function buildLevel() {
   startPos.set(0, 0, 6); respawnPoint.copy(startPos); pos.copy(startPos);
   addTrigger(0, 2.5, 12, 12, 5, 1.2, "start", 0, MG);
 
+  // スタート前方の登れる台(マントル練習: 天面 y=2 を地上からよじ登れる)
+  addBox(0, 1, 18, 12, 2, 6, WT, 1.0);
+
   // --- タイムアタックコース(+Z, 浮遊足場) ---
   // P1
   addBox(0, 2.5, 32, 9, 1, 9, WT, 1.0);
@@ -1547,7 +1565,11 @@ function camQuat(roll) {
 function camDir() { return new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat(0)); }
 function fwdHoriz() { const d = camDir(); d.y = 0; return d.normalize(); }
 function rightHoriz() { return new THREE.Vector3().crossVectors(fwdHoriz(), UP).normalize(); }
-function eyePos() { return new THREE.Vector3(pos.x, pos.y + C.EYE_HEIGHT, pos.z); }
+function eyePos() { return new THREE.Vector3(pos.x, pos.y + eyeHeight, pos.z); }
+function updateEye(dt) {
+  const target = sliding ? C.SLIDE_EYE : C.EYE_HEIGHT;
+  eyeHeight += (target - eyeHeight) * Math.min(1, dt * 12);
+}
 function horizSpeed() { return Math.hypot(vel.x, vel.z); }
 function playerBox() {
   _pb.min.set(pos.x - C.PLAYER_RADIUS, pos.y, pos.z - C.PLAYER_RADIUS);
@@ -1582,25 +1604,36 @@ function wishDir() {
   return w;
 }
 
-/* 軸ごとの AABB 衝突解決 */
-function resolve(axis) {
-  for (let i = 0; i < colliders.length; i++) {
-    const b = colliders[i];
-    const pb = playerBox();
-    if (!pb.intersectsBox(b)) continue;
-    if (axis === "y") {
-      if (vel.y <= 0) { pos.y = b.max.y; onGround = true; }
-      else { pos.y = b.min.y - C.PLAYER_HEIGHT; }
-      vel.y = 0;
-    } else if (axis === "x") {
-      if (vel.x > 0) pos.x = b.min.x - C.PLAYER_RADIUS;
-      else if (vel.x < 0) pos.x = b.max.x + C.PLAYER_RADIUS;
-      vel.x = 0;
-    } else {
-      if (vel.z > 0) pos.z = b.min.z - C.PLAYER_RADIUS;
-      else if (vel.z < 0) pos.z = b.max.z + C.PLAYER_RADIUS;
-      vel.z = 0;
+/* AABB 衝突解決: 全軸を積分してから「最小貫入軸(MTV)」で押し出す。
+   箱の上に立つ場合は Y の貫入が最小になるので、X/Z へ誤って押し出さない(角ワープ防止)。 */
+function integrateAndCollide(dt) {
+  pos.x += vel.x * dt;
+  pos.y += vel.y * dt;
+  pos.z += vel.z * dt;
+  onGround = false;
+  for (let iter = 0; iter < 4; iter++) {
+    let resolved = false;
+    for (let i = 0; i < colliders.length; i++) {
+      const b = colliders[i];
+      const pb = playerBox();
+      const ox = Math.min(pb.max.x, b.max.x) - Math.max(pb.min.x, b.min.x);
+      const oy = Math.min(pb.max.y, b.max.y) - Math.max(pb.min.y, b.min.y);
+      const oz = Math.min(pb.max.z, b.max.z) - Math.max(pb.min.z, b.min.z);
+      if (ox <= 0 || oy <= 0 || oz <= 0) continue;          // 重なっていない
+      resolved = true;
+      const pcx = pos.x, pcy = pos.y + C.PLAYER_HEIGHT / 2, pcz = pos.z;
+      const bcy = (b.min.y + b.max.y) / 2;
+      if (ox <= oy && ox <= oz) {                            // X 最小 → 壁
+        pos.x += pcx < (b.min.x + b.max.x) / 2 ? -ox : ox; vel.x = 0;
+      } else if (oz <= oy && oz <= ox) {                     // Z 最小 → 壁
+        pos.z += pcz < (b.min.z + b.max.z) / 2 ? -oz : oz; vel.z = 0;
+      } else if (pcy < bcy) {                                // Y 最小 & 下側 → 天井
+        pos.y -= oy; if (vel.y > 0) vel.y = 0;
+      } else {                                               // Y 最小 & 上側 → 着地
+        pos.y += oy; onGround = true; if (vel.y < 0) vel.y = 0;
+      }
     }
+    if (!resolved) break;
   }
 }
 
@@ -1615,56 +1648,114 @@ function detectWall() {
       const h = hits[0];
       let n = h.face.normal.clone().transformDirection(h.object.matrixWorld).normalize();
       n.y = 0; if (n.lengthSq() < 1e-4) continue; n.normalize();
-      return { side, normal: n };
+      return { side, normal: n, mesh: h.object };
     }
   }
   return null;
+}
+
+/* マントル(縁を掴んでよじ登り)判定。掴めればモーションを開始して true。 */
+function tryMantle() {
+  if (mantle.active || grapple.active) return false;
+  const dir = fwdHoriz();
+  if (dir.lengthSq() < 1e-6) return false;
+  // 前方に壁/縁があるか(腰の高さから水平レイ)
+  raycaster.set(new THREE.Vector3(pos.x, pos.y + 0.9, pos.z), dir);
+  raycaster.far = C.MANTLE_REACH;
+  const fh = raycaster.intersectObjects(collMeshes, false);
+  if (!fh.length) return false;
+  const d = fh[0].distance;
+  const ox = pos.x + dir.x * (d + 0.3), oz = pos.z + dir.z * (d + 0.3);
+  // 壁の少し先・上から下向きに撃って縁の高さを得る
+  raycaster.set(new THREE.Vector3(ox, pos.y + C.MANTLE_MAX + 0.4, oz), new THREE.Vector3(0, -1, 0));
+  raycaster.far = C.MANTLE_MAX + 0.8;
+  const dh = raycaster.intersectObjects(collMeshes, false);
+  if (!dh.length) return false;
+  const ledgeY = dh[0].point.y, rise = ledgeY - pos.y;
+  if (rise < C.MANTLE_MIN || rise > C.MANTLE_MAX) return false;
+  // 縁の上にプレイヤーが立てる空間があるか
+  raycaster.set(new THREE.Vector3(ox, ledgeY + 0.1, oz), new THREE.Vector3(0, 1, 0));
+  raycaster.far = C.PLAYER_HEIGHT - 0.15;
+  if (raycaster.intersectObjects(collMeshes, false).length) return false;
+  // よじ登り開始
+  mantle.active = true; mantle.t = 0;
+  mantle.from.set(pos.x, pos.y, pos.z);
+  mantle.to.set(pos.x + dir.x * (d + C.MANTLE_FWD), ledgeY + 0.02, pos.z + dir.z * (d + C.MANTLE_FWD));
+  vel.set(0, 0, 0);
+  wallRun.active = false; wallRun.sliding = false;
+  sfx("jump");
+  return true;
+}
+function doMantle(dt) {
+  mantle.t += dt;
+  const a = Math.min(1, mantle.t / C.MANTLE_TIME);
+  pos.y = mantle.from.y + (mantle.to.y - mantle.from.y) * Math.min(1, a * 1.7);  // 先に上昇
+  pos.x = mantle.from.x + (mantle.to.x - mantle.from.x) * a;
+  pos.z = mantle.from.z + (mantle.to.z - mantle.from.z) * a;
+  vel.set(0, 0, 0); sliding = false; updateEye(dt);
+  if (a >= 1) { mantle.active = false; onGround = true; doubleJumpAvailable = true; }
+  if (pos.y < C.KILL_Y) respawn();
+  updateTriggers();
+  if (timerRunning) raceTime += dt;
 }
 
 /* =====================================================================
    プレイヤー物理
    ===================================================================== */
 function updateWallRunState(dt) {
-  if (wallRun.active) {
-    const w = onGround || grapple.active ? null : detectWall();
-    wallRun.timer += dt;
-    if (!w || w.side !== wallRun.side || wallRun.timer > C.WALLRUN_MAX_TIME) {
-      wallRun.active = false; return;
-    }
-    wallRun.normal.copy(w.normal);
-  } else {
-    if (onGround || grapple.active || wallCooldown > 0) return;
-    if (horizSpeed() < C.WALLRUN_MIN_SPEED) return;
-    if (vel.y > 4) return; // 上昇しすぎは不可
-    const w = detectWall();
-    if (!w) return;
-    wallRun.active = true; wallRun.side = w.side; wallRun.normal.copy(w.normal); wallRun.timer = 0;
+  wallRun.active = false; wallRun.sliding = false;
+  if (mantle.active) return;
+  if (onGround) { wallState.id = null; return; }   // 着地で壁状態リセット(次の壁は即ラン)
+  if (grapple.active) return;                       // 発射時に id クリア済
+  if (wallCooldown > 0) return;                     // 壁ジャンプ直後の再掴み防止
+  const w = detectWall();
+  if (!w) return;                                   // 壁から離れた: wallState は凍結(再接触で継続)
+  const wid = w.mesh.id + ":" + w.side;
+  if (wallState.id !== wid) {
+    // 別の壁(または着地/グラップル後の再接触) → 即ウォールラン開始
+    if (horizSpeed() < C.WALLRUN_MIN_SPEED || vel.y > 5) return;  // 開始には最低速度が必要
+    wallState.id = wid; wallState.phase = "run"; wallState.timer = 0;
     if (vel.y < C.WALLRUN_BOOST) vel.y = C.WALLRUN_BOOST;
     sfx("wall");
   }
+  // 同じ壁: run(2秒) ⇄ slide(2秒) を循環
+  wallState.timer += dt;
+  if (wallState.phase === "run" && wallState.timer >= C.WALLRUN_RUN_TIME) { wallState.phase = "slide"; wallState.timer = 0; }
+  else if (wallState.phase === "slide" && wallState.timer >= C.WALLRUN_SLIDE_TIME) { wallState.phase = "run"; wallState.timer = 0; sfx("wall"); }
+  wallRun.side = w.side; wallRun.normal.copy(w.normal);
+  if (wallState.phase === "run") wallRun.active = true; else wallRun.sliding = true;
+}
+function stickToWall(dt) {
+  const n = wallRun.normal;
+  const into = vel.x * n.x + vel.z * n.z;
+  vel.x -= n.x * into; vel.z -= n.z * into;                         // 壁法線成分を除去
+  vel.x -= n.x * C.WALLRUN_STICK * dt; vel.z -= n.z * C.WALLRUN_STICK * dt;  // 軽く吸着
+}
+function wallTangent() {
+  let t = new THREE.Vector3().crossVectors(UP, wallRun.normal).normalize();
+  if (t.dot(fwdHoriz()) < 0) t.multiplyScalar(-1);
+  return t;
 }
 function applyWallRunForces(dt) {
-  const n = wallRun.normal;
-  // 壁法線方向の速度成分を除去し、軽く吸着
-  const into = vel.x * n.x + vel.z * n.z;
-  vel.x -= n.x * into; vel.z -= n.z * into;
-  vel.x -= n.x * C.WALLRUN_STICK * dt; vel.z -= n.z * C.WALLRUN_STICK * dt;
-  // 縦: 弱重力で緩やかに落下
-  vel.y -= C.WALLRUN_GRAVITY * dt;
+  stickToWall(dt);
+  vel.y -= C.WALLRUN_GRAVITY * dt;                                 // 弱重力で緩やかに落下
   if (vel.y < -C.WALLRUN_MAX_FALL) vel.y = -C.WALLRUN_MAX_FALL;
-  // 壁に沿う水平方向へ加速
-  let t = new THREE.Vector3().crossVectors(UP, n).normalize();
-  const f = fwdHoriz();
-  if (t.dot(f) < 0) t.multiplyScalar(-1);
-  accelerate(t, C.WALLRUN_SPEED, C.WALLRUN_ACCEL, dt);
+  accelerate(wallTangent(), C.WALLRUN_SPEED, C.WALLRUN_ACCEL, dt); // 壁に沿って加速
+  doubleJumpAvailable = true;
+}
+function applyWallSlideForces(dt) {
+  stickToWall(dt);
+  vel.y -= C.GRAVITY * dt;                                         // 通常重力で滑落
+  if (vel.y < -C.WALLSLIDE_FALL) vel.y = -C.WALLSLIDE_FALL;
+  accelerate(wallTangent(), C.WALLRUN_SPEED * 0.6, C.WALLRUN_ACCEL * 0.4, dt);
   doubleJumpAvailable = true;
 }
 function doJump() {
-  if (wallRun.active) {
+  if (wallRun.active || wallRun.sliding) {
     const n = wallRun.normal;
     vel.x += n.x * C.WALLJUMP_AWAY; vel.z += n.z * C.WALLJUMP_AWAY;
     vel.y = C.WALLJUMP_UP;
-    wallRun.active = false; wallCooldown = C.WALL_COOLDOWN;
+    wallRun.active = false; wallRun.sliding = false; wallCooldown = C.WALL_COOLDOWN;
     doubleJumpAvailable = true; sfx("jump");
   } else if (onGround) {
     vel.y = C.JUMP_V; onGround = false; doubleJumpAvailable = true; sfx("jump");
@@ -1693,7 +1784,7 @@ function fireGrapple() {
   const hits = raycaster.intersectObjects(targets, false);
   if (hits.length) {
     grapple.active = true; grapple.point.copy(hits[0].point);
-    if (wallRun.active) wallRun.active = false;
+    wallRun.active = false; wallRun.sliding = false; wallState.id = null;  // 次の壁接触で即ウォールラン
     if (rope) rope.visible = true;
     sfx("grapple");
   }
@@ -1701,33 +1792,47 @@ function fireGrapple() {
 function releaseGrapple() { grapple.active = false; if (rope) rope.visible = false; }
 
 function physics(dt) {
+  if (mantle.active) { doMantle(dt); return; }
   const wasGround = onGround;
   if (wallCooldown > 0) wallCooldown -= dt;
+
+  // 前進入力中は縁を掴んでよじ登り(地上の段差・空中の縁ともに)
+  if (keys["KeyW"] && tryMantle()) { doMantle(dt); return; }
 
   updateWallRunState(dt);
   if (jumpQueued) { doJump(); jumpQueued = false; }
 
+  sliding = false;
   if (wallRun.active) {
     applyWallRunForces(dt);
+  } else if (wallRun.sliding) {
+    applyWallSlideForces(dt);
   } else {
     const g = grapple.active ? C.GRAVITY * C.GRAPPLE_GRAV : C.GRAVITY;
     vel.y -= g * dt;
     const wish = wishDir();
+    const slideHeld = keys["ShiftLeft"] || keys["ShiftRight"];
     if (wasGround) {
-      applyFriction(dt, keys["ShiftLeft"] || keys["ShiftRight"] ? C.FRICTION * 0.12 : C.FRICTION);
-      const target = (keys["ShiftLeft"] || keys["ShiftRight"]) ? C.SPRINT_SPEED : C.MOVE_SPEED;
-      accelerate(wish, target, C.GROUND_ACCEL, dt);
+      sliding = slideHeld && horizSpeed() > C.SLIDE_MIN_SPEED;
+      applyFriction(dt, sliding ? C.FRICTION * 0.08 : C.FRICTION);
+      accelerate(wish, sliding ? C.SPRINT_SPEED : C.MOVE_SPEED, C.GROUND_ACCEL, dt);
     } else {
       accelerate(wish, C.MOVE_SPEED, C.AIR_ACCEL, dt);
     }
     if (grapple.active) applyGrapple(dt);
   }
 
-  // 積分 + 衝突
-  onGround = false;
-  pos.x += vel.x * dt; resolve("x");
-  pos.z += vel.z * dt; resolve("z");
-  pos.y += vel.y * dt; resolve("y");
+  // スライド開始の初速ブースト(立ち上がり1回)
+  if (sliding && !prevSliding) {
+    const sp = horizSpeed();
+    if (sp > 0.1) { vel.x += (vel.x / sp) * C.SLIDE_BOOST; vel.z += (vel.z / sp) * C.SLIDE_BOOST; }
+    sfx("wall");
+  }
+  prevSliding = sliding;
+
+  // 積分 + 衝突(最小貫入)
+  integrateAndCollide(dt);
+  updateEye(dt);
 
   if (onGround && !wasGround) { doubleJumpAvailable = true; if (vel.y === 0) sfx("land"); }
   if (pos.y < C.KILL_Y) respawn();
@@ -1769,13 +1874,15 @@ function finishRace() {
 }
 function respawn() {
   pos.copy(respawnPoint); pos.y += 0.05; vel.set(0, 0, 0);
-  wallRun.active = false; grapple.active = false; doubleJumpAvailable = true;
+  wallRun.active = false; wallRun.sliding = false; wallState.id = null;
+  grapple.active = false; mantle.active = false; sliding = false; doubleJumpAvailable = true;
 }
 function resetRun() {
   respawnPoint.copy(startPos); pos.copy(startPos); vel.set(0, 0, 0);
   timerRunning = false; raceTime = 0; finished = false; mode = "free"; cpDone = 0;
   triggers.forEach((x) => { if (x.type === "cp") x.fired = false; });
-  wallRun.active = false; grapple.active = false; doubleJumpAvailable = true;
+  wallRun.active = false; wallRun.sliding = false; wallState.id = null;
+  grapple.active = false; mantle.active = false; sliding = false; doubleJumpAvailable = true;
   hideOverlay(winScreen);
 }
 
@@ -1790,9 +1897,12 @@ function initRope() {
   rope.frustumCulled = false; rope.visible = false; scene.add(rope);
 }
 function updateCamera(dtSmooth) {
-  // ロール(ウォールラン) と FOV キック をスムージング
-  const targetRoll = wallRun.active ? (wallRun.side === 1 ? -0.14 : 0.14) : 0;
+  // ウォールラン/滑落中: 壁側へロール + やや下向きの視線(姿勢が壁に対して斜め)
+  const onWall = wallRun.active || wallRun.sliding;
+  const targetRoll = onWall ? (wallRun.side === 1 ? -0.13 : 0.13) : 0;
   camRoll += (targetRoll - camRoll) * Math.min(1, dtSmooth * 12);
+  const targetPitchOff = onWall ? -0.16 : 0;        // 約 -9°: やや斜め下
+  camPitchOffset += (targetPitchOff - camPitchOffset) * Math.min(1, dtSmooth * 10);
   const sp = horizSpeed();
   const targetKick = Math.min(1, Math.max(0, (sp - C.MOVE_SPEED) / (C.GRAPPLE_MAX_SPEED - C.MOVE_SPEED))) * C.MAX_FOV_KICK;
   fovKick += (targetKick - fovKick) * Math.min(1, dtSmooth * 6);
@@ -1800,7 +1910,7 @@ function updateCamera(dtSmooth) {
 
   const eye = eyePos();
   camera.position.copy(eye);
-  camera.quaternion.copy(camQuat(camRoll));
+  camera.quaternion.setFromEuler(new THREE.Euler(pitch + camPitchOffset, yaw, camRoll, "YXZ"));
 
   // ロープ
   if (grapple.active) {
@@ -1829,7 +1939,8 @@ function updateHUD(dt) {
   const sp = horizSpeed();
   $("speedNum").textContent = String(Math.round(sp));
   $("speedfill").style.width = Math.min(100, (sp / C.GRAPPLE_MAX_SPEED) * 100) + "%";
-  $("stWall").classList.toggle("on", wallRun.active);
+  $("stWall").textContent = wallRun.sliding ? "WALL SLIDE" : "WALL RUN";
+  $("stWall").classList.toggle("on", wallRun.active || wallRun.sliding);
   $("stDouble").classList.toggle("on", doubleJumpAvailable && !onGround);
   $("stGrapple").classList.toggle("on", grapple.active);
   // グラップル可能なターゲットを向いているか
@@ -2033,8 +2144,9 @@ function boot() {
     info: () => ({
       pos: [pos.x, pos.y, pos.z], vel: [vel.x, vel.y, vel.z],
       speed: horizSpeed(), onGround, doubleJump: doubleJumpAvailable,
-      wall: wallRun.active, wallSide: wallRun.side,
+      wall: wallRun.active, wallSliding: wallRun.sliding, wallSide: wallRun.side, wallPhase: wallState.phase, wallTimer: +wallState.timer.toFixed(2),
       grapple: grapple.active, grapplePoint: [grapple.point.x, grapple.point.y, grapple.point.z],
+      mantle: mantle.active, sliding, eye: +eyeHeight.toFixed(2),
       started, paused, finished, mode, time: raceTime, fov: camera.fov,
       colliders: colliders.length, fps: fpsShown, ropeVisible: rope.visible,
     }),
