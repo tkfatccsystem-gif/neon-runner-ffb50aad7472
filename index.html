@@ -40,6 +40,8 @@ canvas{display:block}
 #modeLabel{font-size:16px;font-weight:700;letter-spacing:2px;color:var(--magenta)}
 #fps{font-size:13px;opacity:.7;margin-top:4px}
 #qualityHud{font-size:13px;opacity:.7}
+#gpu{font-size:11px;opacity:.5;max-width:340px;margin-left:auto;line-height:1.3}
+#gpu.warn{color:#ff5a5a;opacity:1;font-weight:700;text-shadow:0 0 8px rgba(255,0,0,.5)}
 
 #states{position:absolute;left:50%;bottom:120px;transform:translateX(-50%);
   display:flex;gap:14px}
@@ -84,6 +86,10 @@ kbd{display:inline-block;min-width:20px;padding:1px 7px;margin:0 2px;border-radi
 .qbtn{padding:6px 14px;border-radius:8px;background:#10182e;color:#bcd;border:1px solid #2a3f63;cursor:pointer;font-size:13px}
 .qbtn:hover{border-color:var(--cyan)}
 .qbtn.qsel{background:var(--cyan);color:#022;border-color:var(--cyan);font-weight:700}
+.courses{flex-wrap:wrap}
+.cbtn{padding:6px 12px;border-radius:8px;background:#10182e;color:#bcd;border:1px solid #2a3f63;cursor:pointer;font-size:12px}
+.cbtn:hover{border-color:var(--magenta)}
+.cbtn.csel{background:var(--magenta);color:#201;border-color:var(--magenta);font-weight:700}
 button#playBtn,button#resumeBtn,button#againBtn{
   margin-top:6px;padding:14px 34px;font-size:18px;font-weight:800;letter-spacing:2px;cursor:pointer;border:none;border-radius:10px;
   color:#021018;background:linear-gradient(90deg,var(--cyan),var(--magenta));
@@ -113,6 +119,7 @@ button#playBtn:hover,button#resumeBtn:hover,button#againBtn:hover{transform:scal
       <div id="modeLabel">FREE ROAM</div>
       <div id="fps">-- fps</div>
       <div id="qualityHud">Q: High</div>
+      <div id="gpu"></div>
     </div>
 
     <div id="states">
@@ -140,15 +147,24 @@ button#playBtn:hover,button#resumeBtn:hover,button#againBtn:hover{transform:scal
         <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移動</div>
         <div><kbd>Mouse</kbd> 視点</div>
         <div><kbd>Space</kbd> ジャンプ / 2段ジャンプ / 壁ジャンプ</div>
-        <div><kbd>Shift</kbd> スライド (加速)</div>
+        <div><kbd>Shift</kbd> スライド（直後加速→約2秒で停止・視点が下がる）</div>
         <div><kbd>左クリック</kbd> グラップル（押し続けて牽引・離すと解除）</div>
-        <div><kbd>R</kbd> リスタート　<kbd>Esc</kbd> ポーズ</div>
+        <div><kbd>W</kbd>押しながら縁へ＝<strong>マントル</strong>（よじ登り）</div>
+        <div><kbd>R</kbd> リスタート　<kbd>Esc</kbd> ポーズ　<kbd>1</kbd>〜<kbd>5</kbd> コース切替</div>
       </div>
 
       <div class="tips">
-        壁の近くを空中で進むと<strong>ウォールラン</strong>。<span class="cyan">シアンの壁</span>が走れる壁。<br>
-        遠くの足場へは<strong>グラップル</strong>で。<span class="magenta">マゼンタのノード</span>が狙い目。<br>
-        <span class="yellow">黄=チェックポイント</span> / <span class="green">緑=ゴール</span>。タイムアタックに挑戦！
+        壁の近くを空中で進むと<strong>ウォールラン</strong>（同じ壁は2秒で滑落→2秒で復帰）。<span class="cyan">シアン</span>=走れる壁。<br>
+        遠くへは<strong>グラップル</strong>。<span class="magenta">マゼンタ</span>=狙い目／<span class="yellow">黄</span>=チェックポイント／<span class="green">緑</span>=ゴール。
+      </div>
+
+      <div class="quality courses">
+        <span>コース:</span>
+        <button class="cbtn csel" data-course="parkour">Parkour</button>
+        <button class="cbtn" data-course="zigzag">Zigzag壁</button>
+        <button class="cbtn" data-course="ascent">Ascent</button>
+        <button class="cbtn" data-course="mega">★Mega Mix</button>
+        <button class="cbtn" data-course="practice">Practice</button>
       </div>
 
       <div class="quality">
@@ -171,7 +187,15 @@ button#playBtn:hover,button#resumeBtn:hover,button#againBtn:hover{transform:scal
       <div class="controls">
         <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移動 / <kbd>Mouse</kbd> 視点</div>
         <div><kbd>Space</kbd> ジャンプ・2段・壁ジャンプ / <kbd>Shift</kbd> スライド</div>
-        <div><kbd>左クリック</kbd> グラップル / <kbd>R</kbd> リスタート</div>
+        <div><kbd>左クリック</kbd> グラップル / <kbd>R</kbd> リスタート / <kbd>1</kbd>〜<kbd>5</kbd> コース切替</div>
+      </div>
+      <div class="quality courses">
+        <span>コース:</span>
+        <button class="cbtn" data-course="parkour">Parkour</button>
+        <button class="cbtn" data-course="zigzag">Zigzag壁</button>
+        <button class="cbtn" data-course="ascent">Ascent</button>
+        <button class="cbtn" data-course="mega">★Mega Mix</button>
+        <button class="cbtn" data-course="practice">Practice</button>
       </div>
       <div class="quality">
         <span>画質:</span>
@@ -1232,8 +1256,7 @@ button#playBtn:hover,button#resumeBtn:hover,button#againBtn:hover{transform:scal
 /* ---------------------------------------------------------------- 定数 */
 const C = {
   GRAVITY: 24,
-  MOVE_SPEED: 8.5,
-  SPRINT_SPEED: 11.5,
+  MOVE_SPEED: 5.95,        // 通常ラン速度(従来8.5の70%)
   GROUND_ACCEL: 90,
   AIR_ACCEL: 28,
   FRICTION: 8,
@@ -1242,7 +1265,7 @@ const C = {
 
   WALLRUN_GRAVITY: 7,
   WALLRUN_MAX_FALL: 4.5,
-  WALLRUN_SPEED: 12.5,
+  WALLRUN_SPEED: 10.0,     // ウォールラン速度(従来12.5の80%)
   WALLRUN_ACCEL: 70,
   WALLRUN_RUN_TIME: 2.0,    // 同じ壁で連続ウォールランできる時間
   WALLRUN_SLIDE_TIME: 2.0,  // 滑落してから再ウォールラン可能になるまでの時間
@@ -1263,7 +1286,8 @@ const C = {
 
   SLIDE_EYE: 0.85,          // スライド中の視点高さ(しゃがみ)
   SLIDE_MIN_SPEED: 3.0,
-  SLIDE_BOOST: 3.5,         // スライド開始時の初速ブースト
+  SLIDE_BOOST: 6.0,         // スライド直後の加速量
+  SLIDE_DURATION: 2.0,      // スライドが速度0になるまでの時間
 
   GRAPPLE_RANGE: 45,        // 到達距離を短めに
   GRAPPLE_PULL: 58,
@@ -1309,6 +1333,19 @@ const mantle = { active: false, t: 0, from: new THREE.Vector3(), to: new THREE.V
 let wallCooldown = 0;
 let camRoll = 0, camPitchOffset = 0, fovKick = 0;
 let sliding = false, prevSliding = false, eyeHeight = C.EYE_HEIGHT;
+let slideTimer = 0, slideSpeed0 = 0;
+const slideDir = new THREE.Vector3();
+
+/* コース定義(全コースを同一ワールドの別領域に配置。spawn は足元位置) */
+const COURSES = {
+  practice: { label: "PRACTICE",     spawn: [0, 0, 6] },
+  parkour:  { label: "PARKOUR",      spawn: [0, 0, 6] },
+  zigzag:   { label: "ZIGZAG WALLS", spawn: [60, 5, -8] },
+  ascent:   { label: "ASCENT",       spawn: [-60, 0, 4] },
+  mega:     { label: "MEGA MIX",     spawn: [0, 6, 200] },
+};
+let activeCourse = "parkour";   // タイム計測の対象コース
+let buildingCourse = "";        // ビルド中のコース(トリガーへ付与)
 
 let started = false, paused = false, finished = false;
 let mode = "free";                         // 'free' | 'race'
@@ -1316,7 +1353,7 @@ let timerRunning = false, raceTime = 0;
 let startPos = pos.clone();
 let respawnPoint = pos.clone();
 let cpTotal = 0, cpDone = 0;
-let bestTime = parseFloat(localStorage.getItem("neonrunner_best") || "0") || 0;
+function getBest(c) { return parseFloat(localStorage.getItem("neonrunner_best_" + c) || "0") || 0; }
 
 const keys = Object.create(null);
 let mouseDown = false;
@@ -1378,6 +1415,26 @@ function neonMat(hex, intensity, repeat) {
 /* =====================================================================
    セットアップ
    ===================================================================== */
+/* 使用中の GPU を検出し HUD に表示(ソフトウェア描画なら警告) */
+function detectGPU() {
+  let info = "unknown";
+  try {
+    const gl = renderer.getContext();
+    const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+    info = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+  } catch (e) {}
+  window.__gpu = info;
+  const soft = /swiftshader|software|llvmpipe|basic render|microsoft basic|reference/i.test(info);
+  window.__softwareRender = soft;
+  console.log("[NEON RUNNER] WebGL renderer:", info, soft ? "  ⚠ SOFTWARE RENDERING (GPU未使用)" : "  (hardware accelerated)");
+  const el = $("gpu");
+  if (el) {
+    const clean = info.replace(/^ANGLE \(/, "").replace(/\)$/, "");
+    el.textContent = soft ? "⚠ ソフトウェア描画 (GPU未使用): " + clean : "GPU: " + clean;
+    el.classList.toggle("warn", soft);
+    el.title = info;
+  }
+}
 function initRenderer() {
   const q = QUALITY[qualityName];
   renderer = new THREE.WebGLRenderer({ antialias: q.aa, powerPreference: "high-performance" });
@@ -1389,6 +1446,7 @@ function initRenderer() {
   renderer.shadowMap.enabled = q.shadow > 0;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   $("app").appendChild(renderer.domElement);
+  detectGPU();
 
   scene = new THREE.Scene();
   scene.background = makeGradientSky();
@@ -1468,65 +1526,152 @@ function addTrigger(cx, cy, cz, sx, sy, sz, type, index, hex) {
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(sx, sy, sz)),
     new THREE.LineBasicMaterial({ color: hex }));
   edges.position.set(cx, cy, cz); scene.add(edges);
-  triggers.push({ box, type, index, fired: false, mesh: m });
+  triggers.push({ box, type, index, fired: false, mesh: m, course: buildingCourse });
+}
+
+const COL = { CY: 0x28e0ff, MG: 0xff3df0, YL: 0xffe24a, GR: 0x52ff8f, WT: 0x9fb8ff };
+
+function buildHub() {            // 練習場(原点周辺) ※パルクールの発進地点も兼ねる
+  const { CY, MG, WT } = COL;
+  buildingCourse = "practice";
+  addBox(0, -0.5, -6, 100, 1, 80, CY, 0.35);            // 大きな床
+  addBox(-9, 4.5, -16, 1, 9, 22, CY, 1.4);              // 練習ウォールラン壁
+  addBox(9, 4.5, -16, 1, 9, 22, CY, 1.4);
+  addBox(-3, 3, -30, 1, 6, 10, CY, 1.4);
+  addBox(3, 3, -38, 1, 6, 10, CY, 1.4);
+  addBox(-24, 8, -22, 3, 16, 3, WT, 0.9); addNode(-24, 16.5, -22);   // グラップル練習柱
+  addBox(26, 11, -28, 3, 22, 3, WT, 0.9); addNode(26, 22.5, -28);
+  addBox(-30, 6, 4, 3, 12, 3, WT, 0.9); addNode(-30, 12.5, 4);
+  addBox(-14, 1, -4, 5, 2, 5, WT, 0.8);                 // 登れる低い台(マントル練習)
+  addBox(14, 1.5, -2, 5, 3, 5, WT, 0.8);
+  addBox(0, 1, 18, 12, 2, 6, WT, 1.0);
+}
+
+function buildParkour() {        // +Z 方向のタイムアタック(足場+壁+グラップル)
+  const { MG, YL, GR, WT, CY } = COL;
+  buildingCourse = "parkour";
+  addTrigger(0, 2.5, 12, 12, 5, 1.2, "start", 0, MG);
+  addBox(0, 2.5, 32, 9, 1, 9, WT, 1.0);
+  addBox(7.5, 6, 46, 1, 11, 18, CY, 1.6);
+  addBox(0, 4.5, 60, 9, 1, 9, WT, 1.0);
+  addTrigger(0, 7, 60, 9, 5, 9, "cp", 1, YL); addNode(0, 14, 67);
+  addBox(0, 13, 75, 2.5, 26, 2.5, MG, 1.4); addNode(0, 26.5, 75);
+  addBox(0, 7.5, 90, 9, 1, 9, WT, 1.0);
+  addBox(-7.5, 11, 102, 1, 13, 18, CY, 1.6);
+  addBox(0, 9.5, 114, 9, 1, 9, WT, 1.0);
+  addTrigger(0, 12, 114, 9, 5, 9, "cp", 2, YL); addNode(7, 19, 121);
+  addBox(0, 18, 127, 2.5, 36, 2.5, MG, 1.4); addNode(0, 36.5, 127);
+  addBox(0, 14, 140, 12, 1, 12, GR, 1.2);
+  addTrigger(0, 17.5, 140, 12, 6, 12, "goal", 99, GR);
+}
+
+function buildZigzag() {         // x≈60: 向かい合う6枚の壁を交互にウォールジャンプ(上から見て ー＿ー＿ー＿)
+  const { MG, GR, CY } = COL;
+  const BX = 60;
+  buildingCourse = "zigzag";
+  addBox(BX, 4.5, -8, 12, 1, 8, CY, 1.0);                       // 発進台(天面 y=5)
+  addTrigger(BX, 7, -2, 12, 6, 1.2, "start", 0, MG);
+  // 6枚の壁(x を ±4 で交互に、z を 8 ずつ前進)。高く長くして当てやすく
+  for (let i = 0; i < 6; i++) {
+    const x = BX + (i % 2 === 0 ? 4 : -4);
+    addBox(x, 10, i * 8, 1.2, 12, 8, CY, 1.7);
+  }
+  addBox(BX, 8, 48, 12, 1, 12, GR, 1.2);                        // ゴール台
+  addTrigger(BX, 11.5, 48, 12, 6, 12, "goal", 99, GR);
+}
+
+function buildAscent() {         // x≈-60: マントルとウォールランで上へ登るタワー
+  const { MG, YL, GR, WT, CY } = COL;
+  const BX = -60;
+  buildingCourse = "ascent";
+  addBox(BX, -0.5, 2, 16, 1, 16, CY, 0.6);                      // 基部の床
+  addTrigger(BX, 2, 8, 12, 5, 1.2, "start", 0, MG);
+  // らせん状に上昇する足場(各段 約1.8m上=ジャンプ+マントルで届く)
+  const steps = [
+    [BX + 5, 2, 4], [BX + 5, 4, 10], [BX, 6, 13], [BX - 5, 8, 10],
+    [BX - 5, 10, 4], [BX, 12, 1],
+  ];
+  steps.forEach((s, i) => {
+    addBox(s[0], s[1] - 0.5, s[2], 5, 1, 5, WT, 1.0);
+    if (i === 2) addTrigger(s[0], s[1] + 2, s[2], 5, 5, 5, "cp", 1, YL);
+  });
+  addBox(BX + 6, 15, 1, 1.2, 8, 10, CY, 1.7);                   // 仕上げのウォールラン壁
+  addNode(BX, 17, 8);                                            // グラップル目標(任意ルート)
+  addBox(BX, 18, 8, 8, 1, 8, GR, 1.2);                          // 頂上ゴール台
+  addTrigger(BX, 21.5, 8, 8, 6, 8, "goal", 99, GR);
+}
+
+function buildMega() {            // 全要素ミックスの超ロングコース(別領域 +Z, 全長約340)
+  const { MG, YL, GR, WT, CY } = COL;
+  const X = 0;
+  buildingCourse = "mega";
+  let z = 200;
+  // 0: スタート
+  addBox(X, 5.5, z, 12, 1, 12, WT, 1.0);
+  addTrigger(X, 8, z + 6, 12, 5, 1.2, "start", 0, MG);
+  // 1: ラン + 2段ジャンプ(3足場)
+  z += 16; addBox(X, 5.5, z, 8, 1, 8, WT, 1.0);
+  z += 12; addBox(X, 5.5, z, 8, 1, 8, WT, 1.0);
+  z += 12; addBox(X, 5.5, z, 8, 1, 8, WT, 1.0);
+  // 2: ウォールラン(+X壁) → 着地 CP1
+  z += 18; addBox(X + 5, 9.5, z, 1, 12, 22, CY, 1.6);
+  z += 18; addBox(X, 5.5, z, 10, 1, 10, WT, 1.0); addTrigger(X, 8, z, 10, 5, 10, "cp", 1, YL);
+  // 3: ジグザグ壁6枚(交互ウォールジャンプ) → 着地
+  for (let i = 0; i < 6; i++) { z += 8; addBox(X + (i % 2 ? -5 : 5), 9.5, z, 1.2, 12, 8, CY, 1.7); }
+  z += 12; addBox(X, 5.5, z, 10, 1, 10, WT, 1.0);
+  // 4: グラップル大ギャップ → CP2
+  z += 18; addBox(X, 13, z, 2.5, 26, 2.5, MG, 1.5); addNode(X, 25.5, z);
+  z += 22; addBox(X, 6.5, z, 10, 1, 10, WT, 1.0); addTrigger(X, 9, z, 10, 5, 10, "cp", 2, YL);
+  // 5: マントル階段(各 +1.8m) → CP3
+  z += 9;  addBox(X, 8.3, z, 8, 1, 6, WT, 1.0);
+  z += 5;  addBox(X, 10.1, z, 8, 1, 6, WT, 1.0);
+  z += 5;  addBox(X, 11.9, z, 8, 1, 6, WT, 1.0);
+  z += 7;  addBox(X, 13.5, z, 10, 1, 10, WT, 1.0); addTrigger(X, 16, z, 10, 5, 10, "cp", 3, YL);
+  // 6: スライド助走 → 谷を飛び越え(谷上に任意グラップルノード)
+  z += 16; addBox(X, 13.5, z, 9, 1, 28, WT, 1.0);
+  addNode(X, 18, z + 18);
+  z += 27; addBox(X, 13.5, z, 10, 1, 10, WT, 1.0);
+  // 7: ウォールラン(左) + グラップル → CP4
+  z += 16; addBox(X - 5, 17, z, 1, 12, 20, CY, 1.6);
+  z += 16; addBox(X, 22, z, 2.5, 24, 2.5, MG, 1.5); addNode(X, 33, z);
+  z += 18; addBox(X, 14, z, 10, 1, 10, WT, 1.0); addTrigger(X, 16.5, z, 10, 5, 10, "cp", 4, YL);
+  // 8: 仕上げの短いジグザグ → ゴール
+  for (let i = 0; i < 4; i++) { z += 8; addBox(X + (i % 2 ? -5 : 5), 18, z, 1.2, 12, 8, CY, 1.7); }
+  z += 14; addBox(X, 15, z, 14, 1, 14, GR, 1.3); addTrigger(X, 18.5, z, 14, 6, 14, "goal", 99, GR);
+}
+
+function recomputeCpTotal() {
+  cpTotal = triggers.filter((t) => t.type === "cp" && t.course === activeCourse).length;
 }
 
 function buildLevel() {
-  const CY = 0x28e0ff, MG = 0xff3df0, YL = 0xffe24a, GR = 0x52ff8f, WT = 0x9fb8ff;
-
-  // --- サンドボックス地面 ---
-  addBox(0, -0.5, -6, 100, 1, 80, CY, 0.35);            // 大きな床(グリッド)
-
-  // 練習用ウォールラン壁(平行)
-  addBox(-9, 4.5, -16, 1, 9, 22, CY, 1.4);
-  addBox(9, 4.5, -16, 1, 9, 22, CY, 1.4);
-  // 練習用ジグザグ
-  addBox(-3, 3, -30, 1, 6, 10, CY, 1.4);
-  addBox(3, 3, -38, 1, 6, 10, CY, 1.4);
-  // グラップル練習の柱
-  addBox(-24, 8, -22, 3, 16, 3, WT, 0.9); addNode(-24, 16.5, -22);
-  addBox(26, 11, -28, 3, 22, 3, WT, 0.9); addNode(26, 22.5, -28);
-  addBox(-30, 6, 4, 3, 12, 3, WT, 0.9); addNode(-30, 12.5, 4);
-  // 低い足場いくつか
-  addBox(-14, 1, -4, 5, 2, 5, WT, 0.8);
-  addBox(14, 1.5, -2, 5, 3, 5, WT, 0.8);
-
-  // --- スタートゲート(z=12) ---
+  buildHub();
+  buildParkour();
+  buildZigzag();
+  buildAscent();
+  buildMega();
+  buildingCourse = "";
+  activeCourse = "parkour";
   startPos.set(0, 0, 6); respawnPoint.copy(startPos); pos.copy(startPos);
-  addTrigger(0, 2.5, 12, 12, 5, 1.2, "start", 0, MG);
-
-  // スタート前方の登れる台(マントル練習: 天面 y=2 を地上からよじ登れる)
-  addBox(0, 1, 18, 12, 2, 6, WT, 1.0);
-
-  // --- タイムアタックコース(+Z, 浮遊足場) ---
-  // P1
-  addBox(0, 2.5, 32, 9, 1, 9, WT, 1.0);
-  // ウォールラン壁(P1→P2)
-  addBox(7.5, 6, 46, 1, 11, 18, CY, 1.6);
-  // P2 = CP1
-  addBox(0, 4.5, 60, 9, 1, 9, WT, 1.0);
-  addTrigger(0, 7, 60, 9, 5, 9, "cp", 1, YL); addNode(0, 14, 67);
-  // グラップル用の中継柱(大ギャップ)
-  addBox(0, 13, 75, 2.5, 26, 2.5, MG, 1.4); addNode(0, 26.5, 75);
-  // P3
-  addBox(0, 7.5, 90, 9, 1, 9, WT, 1.0);
-  // ウォールラン壁(左, P3→P4)
-  addBox(-7.5, 11, 102, 1, 13, 18, CY, 1.6);
-  // P4 = CP2
-  addBox(0, 9.5, 114, 9, 1, 9, WT, 1.0);
-  addTrigger(0, 12, 114, 9, 5, 9, "cp", 2, YL); addNode(7, 19, 121);
-  // 最終グラップル → ゴール塔
-  addBox(0, 18, 127, 2.5, 36, 2.5, MG, 1.4); addNode(0, 36.5, 127);
-  // ゴール台
-  addBox(0, 14, 140, 12, 1, 12, GR, 1.2);
-  addTrigger(0, 17.5, 140, 12, 6, 12, "goal", 99, GR);
-
-  cpTotal = triggers.filter((t) => t.type === "cp").length;
-
-  // ダスト粒子
+  recomputeCpTotal();
   buildDust();
-
   scene.updateMatrixWorld(true);
+}
+
+/* コースへ移動(発進地点へテレポートして走行状態をリセット) */
+function gotoCourse(name) {
+  const c = COURSES[name]; if (!c) return;
+  activeCourse = name;
+  startPos.set(c.spawn[0], c.spawn[1], c.spawn[2]);
+  respawnPoint.copy(startPos);
+  pos.copy(startPos); vel.set(0, 0, 0);
+  timerRunning = false; raceTime = 0; finished = false; mode = "free";
+  cpDone = 0; triggers.forEach((x) => { if (x.course === name && x.type === "cp") x.fired = false; });
+  recomputeCpTotal();
+  wallRun.active = false; wallRun.sliding = false; wallState.id = null;
+  grapple.active = false; mantle.active = false; sliding = false; doubleJumpAvailable = true;
+  hideOverlay(winScreen);
+  toast(c.label);
 }
 
 function buildDust() {
@@ -1802,33 +1947,34 @@ function physics(dt) {
   updateWallRunState(dt);
   if (jumpQueued) { doJump(); jumpQueued = false; }
 
-  sliding = false;
   if (wallRun.active) {
-    applyWallRunForces(dt);
+    sliding = false; applyWallRunForces(dt);
   } else if (wallRun.sliding) {
-    applyWallSlideForces(dt);
+    sliding = false; applyWallSlideForces(dt);
   } else {
-    const g = grapple.active ? C.GRAVITY * C.GRAPPLE_GRAV : C.GRAVITY;
-    vel.y -= g * dt;
-    const wish = wishDir();
     const slideHeld = keys["ShiftLeft"] || keys["ShiftRight"];
-    if (wasGround) {
-      sliding = slideHeld && horizSpeed() > C.SLIDE_MIN_SPEED;
-      applyFriction(dt, sliding ? C.FRICTION * 0.08 : C.FRICTION);
-      accelerate(wish, sliding ? C.SPRINT_SPEED : C.MOVE_SPEED, C.GROUND_ACCEL, dt);
-    } else {
-      accelerate(wish, C.MOVE_SPEED, C.AIR_ACCEL, dt);
+    // スライド開始: 地上+一定速度以上+Shift で発動。直後ブースト→約2秒で速度0へ直線減速
+    if (!sliding && wasGround && slideHeld && horizSpeed() > C.SLIDE_MIN_SPEED) {
+      const sp = horizSpeed();
+      slideDir.set(vel.x / sp, 0, vel.z / sp);
+      slideSpeed0 = sp + C.SLIDE_BOOST; slideTimer = 0; sliding = true; sfx("wall");
     }
-    if (grapple.active) applyGrapple(dt);
+    if (sliding && (!slideHeld || !wasGround)) sliding = false;   // 手放す/空中で解除
+    if (sliding) {
+      slideTimer += dt;
+      const sp = Math.max(0, slideSpeed0 * (1 - slideTimer / C.SLIDE_DURATION));
+      vel.x = slideDir.x * sp; vel.z = slideDir.z * sp;
+      vel.y -= C.GRAVITY * dt;                                    // 接地維持
+      if (slideTimer >= C.SLIDE_DURATION) sliding = false;        // 停止したら立ち上がる
+    } else {
+      const g = grapple.active ? C.GRAVITY * C.GRAPPLE_GRAV : C.GRAVITY;
+      vel.y -= g * dt;
+      const wish = wishDir();
+      if (wasGround) { applyFriction(dt, C.FRICTION); accelerate(wish, C.MOVE_SPEED, C.GROUND_ACCEL, dt); }
+      else accelerate(wish, C.MOVE_SPEED, C.AIR_ACCEL, dt);
+      if (grapple.active) applyGrapple(dt);
+    }
   }
-
-  // スライド開始の初速ブースト(立ち上がり1回)
-  if (sliding && !prevSliding) {
-    const sp = horizSpeed();
-    if (sp > 0.1) { vel.x += (vel.x / sp) * C.SLIDE_BOOST; vel.z += (vel.z / sp) * C.SLIDE_BOOST; }
-    sfx("wall");
-  }
-  prevSliding = sliding;
 
   // 積分 + 衝突(最小貫入)
   integrateAndCollide(dt);
@@ -1847,29 +1993,29 @@ function physics(dt) {
 function updateTriggers() {
   const pb = playerBox();
   for (const t of triggers) {
-    const inside = pb.intersectsBox(t.box);
-    if (!inside) continue;
+    if (!pb.intersectsBox(t.box)) continue;
     if (t.type === "start") {
       if (!timerRunning && !finished) {
-        timerRunning = true; raceTime = 0; mode = "race"; cpDone = 0;
-        triggers.forEach((x) => { if (x.type === "cp") x.fired = false; });
-        toast("GO!");
+        activeCourse = t.course; timerRunning = true; raceTime = 0; mode = "race"; cpDone = 0;
+        triggers.forEach((x) => { if (x.course === t.course && x.type === "cp") x.fired = false; });
+        recomputeCpTotal(); toast("GO!");
       }
-    } else if (t.type === "cp" && !t.fired) {
+    } else if (t.type === "cp" && t.course === activeCourse && !t.fired) {
       t.fired = true; cpDone++;
-      respawnPoint.set(t.box.min.x / 2 + t.box.max.x / 2, t.box.min.y, t.box.min.z / 2 + t.box.max.z / 2);
-      respawnPoint.y = t.box.min.y; toast("CHECKPOINT " + cpDone + "/" + cpTotal); sfx("cp");
-    } else if (t.type === "goal") {
+      respawnPoint.set((t.box.min.x + t.box.max.x) / 2, t.box.min.y, (t.box.min.z + t.box.max.z) / 2);
+      toast("CHECKPOINT " + cpDone + "/" + cpTotal); sfx("cp");
+    } else if (t.type === "goal" && t.course === activeCourse) {
       if (timerRunning) finishRace();
     }
   }
 }
 function finishRace() {
   timerRunning = false; finished = true; mode = "free";
-  if (bestTime === 0 || raceTime < bestTime) { bestTime = raceTime; localStorage.setItem("neonrunner_best", String(bestTime)); }
+  const b = getBest(activeCourse);
+  if (b === 0 || raceTime < b) localStorage.setItem("neonrunner_best_" + activeCourse, String(raceTime));
   sfx("goal");
   $("winTime").textContent = fmt(raceTime);
-  $("winBest").textContent = "BEST " + fmt(bestTime);
+  $("winBest").textContent = "BEST " + fmt(getBest(activeCourse));
   showOverlay(winScreen); exitPointerLock();
 }
 function respawn() {
@@ -1933,9 +2079,10 @@ let toastTimer = 0;
 function toast(txt) { const e = $("toast"); e.textContent = txt; e.classList.add("show"); toastTimer = 1.6; }
 function updateHUD(dt) {
   $("timer").textContent = fmt(raceTime);
-  $("best").textContent = "BEST " + (bestTime ? fmt(bestTime) : "--:--.--");
+  const bt = getBest(activeCourse);
+  $("best").textContent = "BEST " + (bt ? fmt(bt) : "--:--.--");
   $("cp").textContent = "CP " + cpDone + " / " + cpTotal;
-  $("modeLabel").textContent = mode === "race" ? "TIME ATTACK" : "FREE ROAM";
+  $("modeLabel").textContent = (mode === "race" ? "▶ " : "") + (COURSES[activeCourse] ? COURSES[activeCourse].label : "FREE");
   const sp = horizSpeed();
   $("speedNum").textContent = String(Math.round(sp));
   $("speedfill").style.width = Math.min(100, (sp / C.GRAPPLE_MAX_SPEED) * 100) + "%";
@@ -2039,6 +2186,10 @@ function onKey(e, down) {
   if (e.code === "Space" && down && !keys["Space"]) jumpQueued = true;
   keys[e.code] = down;
   if (down && e.code === "KeyR") resetThenMaybeRespawn();
+  if (down && started) {
+    const cmap = { Digit1: "practice", Digit2: "parkour", Digit3: "zigzag", Digit4: "ascent", Digit5: "mega" };
+    if (cmap[e.code]) { gotoCourse(cmap[e.code]); syncCourseButtons(); }
+  }
   if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight"].includes(e.code)) e.preventDefault();
 }
 function resetThenMaybeRespawn() {
@@ -2074,6 +2225,9 @@ function onLockChange() {
    ===================================================================== */
 function showOverlay(el) { el.classList.remove("hidden"); }
 function hideOverlay(el) { el.classList.add("hidden"); }
+function syncCourseButtons() {
+  document.querySelectorAll(".cbtn").forEach((x) => x.classList.toggle("csel", x.dataset.course === activeCourse));
+}
 function startGame() {
   initAudio(); if (actx && actx.resume) actx.resume();
   started = true; paused = false; finished = false;
@@ -2133,6 +2287,8 @@ function boot() {
   $("againBtn").addEventListener("click", () => { resetRun(); started = true; finished = false; hideOverlay(winScreen); requestLock(); });
   document.querySelectorAll(".qbtn").forEach((b) =>
     b.addEventListener("click", () => { const q = b.dataset.q; applyQuality(q === "auto" ? "high" : q); }));
+  document.querySelectorAll(".cbtn").forEach((b) =>
+    b.addEventListener("click", () => { gotoCourse(b.dataset.course); syncCourseButtons(); }));
 
   applyQuality(qualityName);
   requestAnimationFrame(animate);
@@ -2147,6 +2303,7 @@ function boot() {
       wall: wallRun.active, wallSliding: wallRun.sliding, wallSide: wallRun.side, wallPhase: wallState.phase, wallTimer: +wallState.timer.toFixed(2),
       grapple: grapple.active, grapplePoint: [grapple.point.x, grapple.point.y, grapple.point.z],
       mantle: mantle.active, sliding, eye: +eyeHeight.toFixed(2),
+      course: activeCourse, slideSpeed: +Math.hypot(vel.x, vel.z).toFixed(2),
       started, paused, finished, mode, time: raceTime, fov: camera.fov,
       colliders: colliders.length, fps: fpsShown, ropeVisible: rope.visible,
     }),
@@ -2157,6 +2314,7 @@ function boot() {
     fire: fireGrapple, release: releaseGrapple,
     step: (n, dt) => { for (let i = 0; i < (n || 1); i++) physics(dt || STEP); },
     setStarted: (b) => { started = !!b; },
+    goto: (c) => gotoCourse(c),
   };
 }
 
